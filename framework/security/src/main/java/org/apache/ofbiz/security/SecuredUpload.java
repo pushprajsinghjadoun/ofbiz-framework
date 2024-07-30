@@ -42,12 +42,14 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.batik.anim.dom.SAXSVGDocumentFactory;
 import org.apache.batik.util.XMLResourceDescriptor;
@@ -71,6 +73,7 @@ import org.apache.ofbiz.base.util.FileUtil;
 import org.apache.ofbiz.base.util.StringUtil;
 import org.apache.ofbiz.base.util.UtilProperties;
 import org.apache.ofbiz.base.util.UtilValidate;
+import org.apache.ofbiz.base.util.UtilXml;
 import org.apache.ofbiz.entity.Delegator;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -87,6 +90,8 @@ import org.apache.tika.parser.RecursiveParserWrapper;
 import org.apache.tika.sax.BasicContentHandlerFactory;
 import org.apache.tika.sax.ContentHandlerFactory;
 import org.apache.tika.sax.RecursiveParserWrapperHandler;
+import org.mustangproject.ZUGFeRD.ZUGFeRDImporter;
+import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
 import com.lowagie.text.pdf.PdfReader;
@@ -231,10 +236,25 @@ public class SecuredUpload {
 
         // Check the file content
 
-        // Check max line length, default 10000
-        if (!checkMaxLinesLength(fileToCheck)) {
-            Debug.logError("For security reason lines over " + MAXLINELENGTH.toString() + " are not allowed", MODULE);
-            return false;
+        /* Check max line length, default 10000.
+         PDF files are not concerned because they may contain several CharSet encodings
+         hence no possibility to use Files::readAllLines that needs a sole CharSet
+         MsOffice files are not accepted. This is why:
+         https://www.cvedetails.com/vulnerability-list/vendor_id-26/product_id-529/Microsoft-Word.html
+         https://www.cvedetails.com/version-list/26/410/1/Microsoft-Excel.html
+         You name it...
+        */
+        if (!isPdfFile(fileToCheck)) {
+            if (getMimeTypeFromFileName(fileToCheck).equals("application/x-tika-msoffice")) {
+                Debug.logError("File : " + fileToCheck + ", is a MS Office file."
+                        + " It can't be uploaded for security reason. Try to transform a Word file to PDF, "
+                        + "and an Excel file to CSV. For other file types try PDF.", MODULE);
+                return false;
+            }
+            if (!checkMaxLinesLength(fileToCheck)) {
+                Debug.logError("For security reason lines over " + MAXLINELENGTH.toString() + " are not allowed", MODULE);
+                return false;
+            }
         }
 
         if (isExecutable(fileToCheck)) {
@@ -464,34 +484,85 @@ public class SecuredUpload {
 
     /**
      * @param fileName
-     * @return true if it's a safe PDF file: is PDF and does not contains embedded files
-     * @throws IOException If there is an error parsing the document
+     * @return true if it's a PDF file
      */
-    private static boolean isValidPdfFile(String fileName) throws IOException {
+    private static boolean isPdfFile(String fileName) {
+        File file = new File(fileName);
+        try {
+            if (Objects.isNull(file) || !file.exists()) {
+                return false;
+            }
+            // Load stream in PDF parser
+            new PdfReader(file.getAbsolutePath()); // Just a check
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * @param fileName
+     * @return true if it's a safe PDF file: is a PDF, and contains only 1 embedded readable (valid and secure) XML file (zUGFeRD)
+     */
+    private static boolean isValidPdfFile(String fileName) {
         File file = new File(fileName);
         boolean safeState = false;
+        boolean canParseZUGFeRD = true;
         try {
-            if ((file != null) && file.exists()) {
-                // Load stream in PDF parser
-                // If the stream is not a PDF then exception will be thrown and safe state will be set to FALSE
-                PdfReader reader = new PdfReader(file.getAbsolutePath());
-                // Check 1: detect if the document contains any JavaScript code
-                String jsCode = reader.getJavaScript();
-                if (jsCode == null) {
-                    // OK no JS code, pass to check 2: detect if the document has any embedded files
-                    PDEmbeddedFilesNameTreeNode efTree = null;
-                    try (PDDocument pdDocument = PDDocument.load(file)) {
-                        PDDocumentNameDictionary names = new PDDocumentNameDictionary(pdDocument.getDocumentCatalog());
-                        efTree = names.getEmbeddedFiles();
+            if (Objects.isNull(file) || !file.exists()) {
+                return safeState;
+            }
+            // Load stream in PDF parser
+            // If the stream is not a PDF then exception will be thrown and safe state will be set to FALSE
+            PdfReader reader = new PdfReader(file.getAbsolutePath());
+            // Check 1: detect if the document contains any JavaScript code
+            String jsCode = reader.getJavaScript();
+            if (!Objects.isNull(jsCode)) {
+                return safeState;
+            }
+            // OK no JS code, pass to check 2: detect if the document has any embedded files
+            PDEmbeddedFilesNameTreeNode efTree = null;
+            try (PDDocument pdDocument = PDDocument.load(file)) {
+                PDDocumentNameDictionary names = new PDDocumentNameDictionary(pdDocument.getDocumentCatalog());
+                efTree = names.getEmbeddedFiles();
+            }
+            boolean zUGFeRDCompliantUploadAllowed = UtilProperties.getPropertyAsBoolean("security", "allowZUGFeRDCompliantUpload", false);
+            if (zUGFeRDCompliantUploadAllowed && !Objects.isNull(efTree)) {
+                canParseZUGFeRD = false;
+                Integer numberOfEmbeddedFiles = efTree.getNames().size();
+                if (numberOfEmbeddedFiles.equals(1)) {
+                    ZUGFeRDImporter importer = new ZUGFeRDImporter(file.getAbsolutePath());
+                    boolean allowZUGFeRDnotSecure = UtilProperties.getPropertyAsBoolean("security", "allowZUGFeRDnotSecure", false);
+                    if (allowZUGFeRDnotSecure) {
+                        canParseZUGFeRD = importer.canParse();
+                    } else {
+                        try {
+                            Document document = UtilXml.readXmlDocument(importer.getUTF8());
+                            if (document.toString().equals("[#document: null]")) {
+                                safeState = false;
+                                Debug.logInfo("The file " + file.getAbsolutePath()
+                                        + " is not a readable (valid and secure) PDF file. For security reason it's not accepted as a such file",
+                                        MODULE);
+
+                            }
+                        } catch (SAXException | ParserConfigurationException | IOException e) {
+                            safeState = false;
+                            Debug.logInfo(e, "The file " + file.getAbsolutePath()
+                                    + " is not a readable (valid and secure) PDF file. For security reason it's not accepted as a such file",
+                                    MODULE);
+                        }
                     }
-                    safeState = efTree == null;
                 }
             }
+            safeState = Objects.isNull(efTree) || canParseZUGFeRD;
         } catch (Exception e) {
             safeState = false;
-            Debug.logInfo(e, "The file " + file.getAbsolutePath() + " is not a valid PDF file. For security reason it's not accepted as a such file",
+            Debug.logInfo(e, "The file " + file.getAbsolutePath() + " is not a readable (valid and secure) PDF file. "
+                    + "For security reason it's not accepted as a such file",
                     MODULE);
         }
+        file = new File(fileName);
+        file.delete();
         return safeState;
     }
 
@@ -788,6 +859,7 @@ public class SecuredUpload {
                 }
             }
         } catch (IOException e) {
+            Debug.logError(e, "File : " + fileToCheck + ", can't be uploaded for security reason", MODULE);
             return false;
         }
         return true;

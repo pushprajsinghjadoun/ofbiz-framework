@@ -19,6 +19,8 @@
 package org.apache.ofbiz.webapp.control;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
@@ -155,6 +157,22 @@ public class ControlFilter extends HttpFilter {
                         && null == System.getProperty("SolrDispatchFilter") // Allows Solr tests
                         && SecurityUtil.containsFreemarkerInterpolation(req, resp, uri)) {
                     return;
+                }
+            }
+            // Reject wrong URLs
+            String initialURI = req.getRequestURI();
+            if (initialURI != null) { // Allow tests with Mockito. ControlFilterTests send null
+                try {
+                    String uRIFiltered = new URI(initialURI)
+                            .normalize().toString()
+                            .replaceAll(";", "")
+                            .replaceAll("(?i)%2e", "");
+                    if (!initialURI.equals(uRIFiltered)) {
+                        Debug.logError("For security reason this URL is not accepted", MODULE);
+                        throw new RuntimeException("For security reason this URL is not accepted");
+                    }
+                } catch (URISyntaxException e) {
+                    throw new RuntimeException(e);
                 }
             }
 

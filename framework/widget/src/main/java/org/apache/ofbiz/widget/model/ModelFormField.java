@@ -1073,6 +1073,7 @@ public final class ModelFormField {
         public static final String ROW_SUBMIT_FIELD_NAME = "_rowSubmit";
         private final FlexibleStringExpander allChecked;
 
+
         private CheckField(CheckField original, ModelFormField modelFormField) {
             super(original, modelFormField);
             this.allChecked = original.allChecked;
@@ -1952,7 +1953,7 @@ public final class ModelFormField {
         private final int otherFieldSize;
         private final String size;
         private final SubHyperlink subHyperlink;
-        private final String textSize;
+        private final Optional<Integer> textSize;
 
         private DropDownField(DropDownField original, ModelFormField modelFormField) {
             super(original, modelFormField);
@@ -2005,11 +2006,8 @@ public final class ModelFormField {
             } else {
                 this.subHyperlink = null;
             }
-            String textSize = element.getAttribute("text-size");
-            if (textSize.isEmpty()) {
-                textSize = "0";
-            }
-            this.textSize = textSize;
+
+            this.textSize = parseElementAttributeAsOptionalInteger(element, "text-size");
         }
 
         public DropDownField(int fieldSource, List<OptionSource> optionSources) {
@@ -2022,7 +2020,7 @@ public final class ModelFormField {
             this.otherFieldSize = 0;
             this.size = "1";
             this.subHyperlink = null;
-            this.textSize = "0";
+            this.textSize = Optional.empty();
         }
 
         public DropDownField(int fieldSource, ModelFormField modelFormField) {
@@ -2035,7 +2033,7 @@ public final class ModelFormField {
             this.otherFieldSize = 0;
             this.size = "1";
             this.subHyperlink = null;
-            this.textSize = "0";
+            this.textSize = Optional.empty();
         }
 
         public DropDownField(ModelFormField modelFormField) {
@@ -2048,7 +2046,7 @@ public final class ModelFormField {
             this.otherFieldSize = 0;
             this.size = "1";
             this.subHyperlink = null;
-            this.textSize = "0";
+            this.textSize = Optional.empty();
         }
 
         @Override
@@ -2158,7 +2156,7 @@ public final class ModelFormField {
          * Gets text size.
          * @return the text size
          */
-        public String getTextSize() {
+        public Optional<Integer> getTextSize() {
             return this.textSize;
         }
 
@@ -5074,6 +5072,7 @@ public final class ModelFormField {
         private final FlexibleStringExpander visualEditorButtons;
         private final boolean visualEditorEnable;
         private final Integer maxlength;
+        private final FlexibleStringExpander placeholder;
 
         public TextareaField(Element element, ModelFormField modelFormField) {
             super(element, modelFormField);
@@ -5114,6 +5113,7 @@ public final class ModelFormField {
             this.maxlength = maxlength;
             this.visualEditorButtons = FlexibleStringExpander.getInstance(element.getAttribute("visual-editor-buttons"));
             this.visualEditorEnable = "true".equals(element.getAttribute("visual-editor-enable"));
+            this.placeholder = FlexibleStringExpander.getInstance(element.getAttribute("placeholder"));
         }
 
         public TextareaField(int fieldSource, ModelFormField modelFormField) {
@@ -5125,6 +5125,7 @@ public final class ModelFormField {
             this.maxlength = null;
             this.visualEditorButtons = FlexibleStringExpander.getInstance("");
             this.visualEditorEnable = false;
+            this.placeholder = FlexibleStringExpander.getInstance("");
         }
 
         public TextareaField(ModelFormField modelFormField) {
@@ -5140,6 +5141,7 @@ public final class ModelFormField {
             this.cols = original.cols;
             this.rows = original.rows;
             this.maxlength = original.maxlength;
+            this.placeholder = original.placeholder;
         }
 
         @Override
@@ -5227,6 +5229,22 @@ public final class ModelFormField {
          */
         public boolean isReadOnly() {
             return readOnly;
+        }
+
+        /**
+         * Returns the placeholder
+         * @return the placeholder
+         */
+        public FlexibleStringExpander getPlaceholder() {
+            return this.placeholder;
+        }
+
+        /**
+         * Returns the placeholder
+         * @return the placeholder
+         */
+        public String getPlaceholder(Map<String, Object> context) {
+            return this.placeholder.expandString(context);
         }
 
         @Override
@@ -5578,5 +5596,18 @@ public final class ModelFormField {
                 throws IOException {
             formStringRenderer.renderTextFindField(writer, context, this);
         }
+    }
+
+    private static Optional<Integer> parseElementAttributeAsOptionalInteger(Element element, String attributeName) {
+        String attributeValue = element.getAttribute(attributeName);
+        if (UtilValidate.isNotEmpty(attributeValue)) {
+            try {
+                return Optional.of(Integer.parseInt(attributeValue));
+            } catch (NumberFormatException e) {
+                Debug.logError("Could not parse the " + attributeName + " value of the text element: ["
+                        + attributeValue + "],", MODULE);
+            }
+        }
+        return Optional.empty();
     }
 }

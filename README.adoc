@@ -24,8 +24,8 @@ image:https://img.shields.io/badge/License-Apache%202.0-blue.svg[link=http://www
 image:https://img.shields.io/badge/Version-trunk-blue.svg[link=https://github.com/apache/ofbiz-framework]
 image:https://ci2.apache.org/badges/ofbizTrunkFrameworkPlugins.svg[link=https://ci2.apache.org/#/builders?tags=%2BofbizTrunkFrameworkPlugins]
 image:https://github.com/apache/ofbiz-framework/actions/workflows/gradle.yaml/badge.svg?branch=trunk[link=https://github.com/apache/ofbiz-framework/actions/workflows/gradle.yaml]
-image:https://sonarcloud.io/api/project_badges/measure?project=apache_ofbiz-framework&metric=alert_status[link=https://sonarcloud.io/dashboard?id=apache_ofbiz-framework]
 image:https://qpkb254zxeu.montastic.io/badge[link=https://qpkb254zxeu.montastic.io]
+image:https://api.securityscorecards.dev/projects/github.com/apache/ofbiz-framework/badge[link=https://securityscorecards.dev/viewer/?uri=github.com/apache/ofbiz-framework]
 //image:https://github.com/apache/ofbiz-framework/actions/workflows/codeql-analysis.yml/badge.svg[link=https://github.com/apache/ofbiz-framework/actions/workflows/codeql-analysis.yml]
 
 
@@ -104,7 +104,7 @@ ____
 "Powershell is not recognized as an internal or external command, operable program or batch file"
 ____
 
-follow the advice there: https://s.apache.org/vdcv8. If you want more details see: https://s.apache.org/ac7no
+follow the advice there: https://s.apache.org/vdcv8. If you want more details see: https://s.apache.org/urnju
 
 * If you run into problems check the the execution policy of PowerShell. See https://s.apache.org/urnju for details.
 By setting the execution policy to "unrestricted", you'll be prompted to run the script once you run the init-gradle-wrapper command.
@@ -145,6 +145,12 @@ _Note_: Ignore the % progress indicator because this task does not end as long
 as OFBiz is running.
 ___________________________________________________________________________________________________
 
+
+[[Docker]]
+== Docker
+If you want to set and use Docker, link:DOCKER.html[here is the documentation]
+
+
 [[visit-ofbiz-through-your-browser]]
 === Visit OFBiz through your browser:
 
@@ -176,7 +182,11 @@ You can find more information about security in OFBiz at
 https://cwiki.apache.org/confluence/display/OFBIZ/Keeping+OFBiz+secure[Keeping OFBiz secure]
 
 [CAUTION]
+====
 In production never use the credentials contained in demo data. Not only the admin credentials, but all of them.
+
+Also we recommend to not use Windows Server in production because we are not supporting specific Windows related security issues.
+====
 
 [[build-system-syntax]]
 == Build system syntax
@@ -521,12 +531,12 @@ parameters are passed:
 
 // tag::testingtasks[]
 [[execute-all-unit-tests]]
-==== Execute all unit tests
+==== Execute all unit tests (no need access to the DB)
 
 `gradlew test`
 
 [[execute-all-integration-tests]]
-==== Execute all integration tests
+==== Execute all integration tests (need access to the DB)
 
 `gradlew testIntegration`
 
@@ -555,7 +565,7 @@ verbose:
 [[execute-an-integration-test-case]]
 ==== Execute an integration test case
 
-run a test case, in this example the component is "entity" and the case name is
+Run a test case, in this example the component is "entity" and the case name is
 "entity-tests"
 
 `gradlew "ofbiz --test component=entity --test suitename=entitytests --test case=entity-query-tests"`
@@ -563,7 +573,7 @@ run a test case, in this example the component is "entity" and the case name is
 [[execute-an-integration-test-case-in-debug-mode-with-verbose-log]]
 ==== Execute an integration test case in debug mode with verbose log
 
-listens on port *5005*
+Listens on port *5005*
 
 `gradlew "ofbiz --test component=entity --test loglevel=verbose" --debug-jvm`
 
@@ -575,9 +585,23 @@ listens on port *5005*
 [[execute-an-integration-test-suite-in-debug-mode]]
 ==== Execute an integration test suite in debug mode
 
-listens on port *5005*
+Listens on port *5005*
 
 `gradlew "ofbiz --test component=entity --test suitename=entitytests" --debug-jvm`
+
+[[execute-all-component-tests]]
+==== Execute all component tests
+
+`gradlew "ofbiz --test component=entity"`
+
+[[execute-all-component-tests-in-debug-mode]]
+==== Execute all component tests in debug mode
+
+Listens on port *5005*
+
+`gradlew "ofbiz --test component=entity" --debug-jvm`
+
+
 
 // end::testingtasks[]
 
@@ -615,16 +639,6 @@ By default Xlint prints output of all warnings detected by the compiler, if you
 want to silence them
 
 `gradlew -PXlint:none build`
-
-[[run-owasp-tool-to-identify-dependency-vulnerabilities-cves]]
-==== Run OWASP tool to identify dependency vulnerabilities (CVEs)
-
-The below command activates a gradle plugin (OWASP) and Identifies and reports
-known vulnerabilities (CVEs) in OFBiz library dependencies. The task takes time
-to complete, and once done, a report will be generated in
-$OFBIZ_HOME/build/reports/dependency-check-report.html
-
-`gradlew -PenableOwasp dependencyCheckAnalyze`
 
 [[setup-eclipse-project-for-ofbiz]]
 ==== Setup eclipse project for OFBiz
@@ -692,30 +706,37 @@ If you need username and password to access the custom repository:
 [[pull-an-official-plugin-from-source-control]]
 === Pull an official plugin from source control
 
-Download an official plugin from source control (currently subversion) and place
-it in the plugins directory. In addition, this task also executes the "install"
-task if it is defined for the plugin being downloaded.
+Download an official plugin from source control and place it in the plugins directory.
+It's able to handle branches switches
 
-This task is mostly useful when working on the trunk branch as it pulls in the
-latest version of a plugin.
+[IMPORTANT]
+====
+You need to use the last Git version, at least a 2.26 version
+====
 
-`gradlew pullPluginSource -PpluginId=ecommerce`
+
+MS Windows: `pullPluginSource example` +
+Unix-like OS: `./pullPluginSource.sh example`
 
 [[pull-all-official-plugins-from-source-control]]
 === Pull all official plugins from source control
 
-Download all officially supported plugins from source control (currently
-git) and place them in /plugins.
-WARNING! This task deletes the /plugins directory and replaces it with the
-official plugins.
+Download all officially supported plugins from source control and place them in /plugins.
+It's able to handle branches switches
 
-`gradlew pullAllPluginsSource`
+[CAUTION]
+====
+ This task deletes the /plugins directory and replaces it with the official plugins.
+====
 
-This task makes it easy to download and develop officially supported plugins. It
-is mostly used by developers or individuals working on the trunk branch. We do
-not recommend using this task on releases of OFBiz, instead consider using the
-"pullPlugin" task to get the correct version of a plugin compatible with your
-release.
+[IMPORTANT]
+====
+You need to use the last Git version, at least a 2.26 version
+====
+
+MS Windows: `pullAllPluginsSource` +
+Unix-like OS: `./pullAllPluginsSource.sh`
+
 
 [[install-a-plugin]]
 === Install a plugin
@@ -809,9 +830,9 @@ as a replacement for both "special-purpose" and "hot-deploy".
 If you need to load the components in the plugins directory in a specific order
 place a component-load.xml file in the plugins directory listing the order.
 
-To check out a plugin from source control use the *pullPluginSource* Gradle
-task. To check out all plugins from source control use the
-*pullAllPluginsSource*. *Beware* this deletes a previously existing plugins
+To check out a plugin from source control use the Windows or Unix-like *pullPluginSource* script.
+To check out all plugins from source control use the
+*pullAllPluginsSource* script. *Beware* this deletes a previously existing plugins
 directory.
 
 [[running-gradle-tasks-without-an-internet-connection]]
