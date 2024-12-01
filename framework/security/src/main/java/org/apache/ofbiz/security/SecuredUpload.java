@@ -33,6 +33,7 @@ import java.io.StringReader;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -68,6 +69,7 @@ import org.apache.commons.imaging.formats.tiff.TiffImageParser;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.ofbiz.base.crypto.HashCrypt;
 import org.apache.ofbiz.base.util.Debug;
 import org.apache.ofbiz.base.util.FileUtil;
 import org.apache.ofbiz.base.util.StringUtil;
@@ -98,7 +100,7 @@ import com.lowagie.text.pdf.PdfReader;
 
 public class SecuredUpload {
 
-    // To check if a webshell is not uploaded
+    // To check if a webshell is not uploaded or a reverse shell put in the query string
 
     // This can be helpful:
     // https://en.wikipedia.org/wiki/File_format
@@ -119,14 +121,32 @@ public class SecuredUpload {
     private static final String FILENAMEVALIDCHARACTERS =
             UtilProperties.getPropertyValue("security", "fileNameValidCharacters", "[a-zA-Z0-9-_ ]");
 
+    // Cover method of the same name below. Historically used with 84 references when below was created
+    // check there is no web shell in the uploaded file
+    // A file containing a reverse shell will be rejected.
     public static boolean isValidText(String content, List<String> allowed) throws IOException {
-        String contentWithoutSpaces = content.replace(" ", "");
-        if ((contentWithoutSpaces.contains("\"+\"") || contentWithoutSpaces.contains("'+'"))
-                && !ALLOWSTRINGCONCATENATIONINUPLOADEDFILES) {
-            Debug.logInfo("The uploaded file contains a string concatenation. It can't be uploaded for security reason", MODULE);
+        return isValidText(content, allowed, false);
+    }
+
+    public static boolean isValidText(String content, List<String> allowed, boolean isQuery) throws IOException {
+        if (content == null) {
             return false;
         }
-        return content != null ? DENIEDWEBSHELLTOKENS.stream().allMatch(token -> isValid(content, token.toLowerCase(), allowed)) : false;
+        if (!isQuery) {
+            String contentWithoutSpaces = content.replaceAll(" ", "");
+            if ((contentWithoutSpaces.contains("\"+\"") || contentWithoutSpaces.contains("'+'"))
+                    && !ALLOWSTRINGCONCATENATIONINUPLOADEDFILES) {
+                Debug.logInfo("The uploaded file contains a string concatenation. It can't be uploaded for security reason", MODULE);
+                return false;
+            }
+        } else {
+            // Check the query string is safe, notably no reverse shell
+            List<String> queryParameters = StringUtil.split(content, "&");
+            return DENIEDWEBSHELLTOKENS.stream().allMatch(token -> isValid(queryParameters, token.toLowerCase(), allowed));
+        }
+
+        // Check there is no web shell in an uploaded file
+        return DENIEDWEBSHELLTOKENS.stream().allMatch(token -> isValid(content.toLowerCase(), token.toLowerCase(), allowed));
     }
 
     public static boolean isValidFileName(String fileToCheck, Delegator delegator) throws IOException {
@@ -243,6 +263,11 @@ public class SecuredUpload {
          https://www.cvedetails.com/vulnerability-list/vendor_id-26/product_id-529/Microsoft-Word.html
          https://www.cvedetails.com/version-list/26/410/1/Microsoft-Excel.html
          You name it...
+         Also, the file may have been created using another charset than the one used to read it (default to OS' one).
+         I remember having searched bout that. But even
+         http://illegalargumentexception.blogspot.com/2009/05/java-rough-guide-to-character-encoding.html#javaencoding_autodetect
+         is not a 100% solution.
+         So even for text files it can be a problem and according to above there is no complete solution.
         */
         if (!isPdfFile(fileToCheck)) {
             if (getMimeTypeFromFileName(fileToCheck).equals("application/x-tika-msoffice")) {
@@ -251,7 +276,7 @@ public class SecuredUpload {
                         + "and an Excel file to CSV. For other file types try PDF.", MODULE);
                 return false;
             }
-            if (!checkMaxLinesLength(fileToCheck)) {
+            if (!isValidImageIncludingSvgFile(fileToCheck) && !checkMaxLinesLength(fileToCheck)) {
                 Debug.logError("For security reason lines over " + MAXLINELENGTH.toString() + " are not allowed", MODULE);
                 return false;
             }
@@ -496,6 +521,7 @@ public class SecuredUpload {
             new PdfReader(file.getAbsolutePath()); // Just a check
             return true;
         } catch (Exception e) {
+            // If it's not a PDF then exception will be thrown and return will be false
             return false;
         }
     }
@@ -505,6 +531,9 @@ public class SecuredUpload {
      * @return true if it's a safe PDF file: is a PDF, and contains only 1 embedded readable (valid and secure) XML file (zUGFeRD)
      */
     private static boolean isValidPdfFile(String fileName) {
+        if (!isPdfFile(fileName)) {
+            return false;
+        }
         File file = new File(fileName);
         boolean safeState = false;
         boolean canParseZUGFeRD = true;
@@ -513,7 +542,6 @@ public class SecuredUpload {
                 return safeState;
             }
             // Load stream in PDF parser
-            // If the stream is not a PDF then exception will be thrown and safe state will be set to FALSE
             PdfReader reader = new PdfReader(file.getAbsolutePath());
             // Check 1: detect if the document contains any JavaScript code
             String jsCode = reader.getJavaScript();
@@ -823,10 +851,30 @@ public class SecuredUpload {
         return isValidText(content, allowed);
     }
 
+    // Check there is no web shell
     private static boolean isValid(String content, String string, List<String> allowed) {
-        boolean isOK = !content.toLowerCase().contains(string) || allowed.contains(string);
+        boolean isOK = !content.contains(string) || allowed.contains(string);
         if (!isOK) {
             Debug.logInfo("The uploaded file contains the string '" + string + "'. It can't be uploaded for security reason", MODULE);
+        }
+        return isOK;
+    }
+
+    // Check there is no reverse shell in query string
+    private static boolean isValid(List<String> queryParameters, String string, List<String> allowed) {
+        boolean isOK = true;
+
+        for (String parameter : queryParameters) {
+            if (!parameter.contains(string)
+                    || allowed.contains(HashCrypt.cryptBytes("SHA", "OFBiz", parameter.toLowerCase().getBytes(StandardCharsets.UTF_8)))) {
+                continue;
+            } else {
+                isOK = false;
+                break;
+            }
+        }
+        if (!isOK) {
+            Debug.logInfo("The HTTP query string contains the string '" + string + "'. It can't be uploaded for security reason", MODULE);
         }
         return isOK;
     }
@@ -848,6 +896,12 @@ public class SecuredUpload {
         String deniedTokens = UtilProperties.getPropertyValue("security", "deniedWebShellTokens");
         return UtilValidate.isNotEmpty(deniedTokens) ? StringUtil.split(deniedTokens, ",") : new ArrayList<>();
     }
+
+    public static List<String> getallowedTokens() {
+        String allowedTokens = UtilProperties.getPropertyValue("security", "allowedTokens");
+        return UtilValidate.isNotEmpty(allowedTokens) ? StringUtil.split(allowedTokens, ",") : new ArrayList<>();
+    }
+
 
     private static boolean checkMaxLinesLength(String fileToCheck) {
         try {

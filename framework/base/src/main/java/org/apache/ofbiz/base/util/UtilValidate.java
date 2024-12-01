@@ -621,11 +621,11 @@ public final class UtilValidate {
     }
 
     /**
-     * isUrl returns true if the string contains ://
+     * isUrlInString returns true if the string is empty or contains ://
      * @param s String to validate Note: this does not handle "component://" specific to OFBiz
-     * @return true if s contains ://
+     * @return true if s is empty or contains ://
      */
-    public static boolean isUrl(String s) {
+    public static boolean isUrlInString(String s) {
         if (isEmpty(s)) {
             return DEFAULT_EMPTY_OK;
         }
@@ -633,12 +633,12 @@ public final class UtilValidate {
     }
 
     /**
-     * urlInString returns true if the string contains :// and not "component://"
+     * isUrlInStringAndDoesNotStartByComponentProtocol returns true if the string is non-empty, contains :// but does not start with "component://"
      * @param s String to validate
-     * @return true if s contains :// and not "component://"
+     * @return true if s is non-empty, contains :// and does not start with "component://"
      */
-    public static boolean urlInString(String s) {
-        if (isEmpty(s) || s.contains("component://")) {
+    public static boolean isUrlInStringAndDoesNotStartByComponentProtocol(String s) {
+        if (isEmpty(s) || s.startsWith("component://")) {
             return false;
         }
         return s.indexOf("://") != -1;

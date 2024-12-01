@@ -156,6 +156,35 @@ under the License.
   </span>
 </#macro>
 
+<#macro renderDropDownOptionList items currentValue multiple dDFCurrent noCurrentSelectedKey>
+  <#list items as item>
+    <#if item.options?has_content>
+      <#if groupOpen??></optgroup></#if>
+      <optgroup label="${item.description}"<#if item.id??> id="${item.id}"</#if><#if item.widgetStyle??> class="${item.widgetStyle}"</#if>/>
+      <@renderDropDownOptionList item.options currentValue multiple dDFCurrent noCurrentSelectedKey/>
+      <#assign groupOpen = true/>
+    <#else>
+      <#if multiple>
+        <option
+        <#if currentValue?has_content && item.selected()>
+          selected
+        <#elseif !currentValue?has_content && noCurrentSelectedKey?has_content && noCurrentSelectedKey == item.key()>
+          selected
+        </#if>
+        value="${item.key()}">${item.description()}</option><#rt/>
+      <#else>
+        <option
+        <#if currentValue?has_content && currentValue == item.key() && dDFCurrent?has_content && "selected" == dDFCurrent>
+          selected
+        <#elseif !currentValue?has_content && noCurrentSelectedKey?has_content && noCurrentSelectedKey == item.key()>
+          selected
+        </#if>
+        value="${item.key()}">${item.description()}</option><#rt/>
+      </#if>
+    </#if>
+  </#list>
+  <#if groupOpen??></optgroup></#if>
+</#macro>
 <#macro renderDropDownField name className id formName explicitDescription options ajaxEnabled
         otherFieldName="" otherValue="" otherFieldSize=""
         alert="" conditionGroup="" tabindex="" multiple=false event="" size="" placeCurrentValueAsFirstOption=false
@@ -167,6 +196,7 @@ under the License.
     <select name="${name?default("")}"
       <@renderClass className alert /> <@renderDisabled disabled />
       <#if id?has_content> id="${id}"</#if>
+      <#if multiple> multiple="multiple"</#if>
       <#if ajaxEnabled> class="autoCompleteDropDown"</#if>
       <#if event?has_content> ${event}="${action}"</#if>
       <#if size?has_content> size="${size}"</#if>
@@ -184,25 +214,7 @@ under the License.
       <#elseif !options?has_content>
           <option value="">&nbsp;</option>
       </#if>
-      <#list options as item>
-        <#if multiple>
-          <option
-            <#if currentValue?has_content && item.selected()>
-              selected
-            <#elseif !currentValue?has_content && noCurrentSelectedKey?has_content && noCurrentSelectedKey == item.key()>
-              selected
-            </#if>
-            value="${item.key()}">${item.description()}</option><#rt/>
-        <#else>
-          <option
-            <#if currentValue?has_content && currentValue == item.key() && dDFCurrent?has_content && "selected" == dDFCurrent>
-              selected
-            <#elseif !currentValue?has_content && noCurrentSelectedKey?has_content && noCurrentSelectedKey == item.key()>
-              selected
-            </#if>
-            value="${item.key()}">${item.description()}</option><#rt/>
-        </#if>
-      </#list>
+      <@renderDropDownOptionList options currentValue multiple dDFCurrent noCurrentSelectedKey/>
     </select>
   </span>
   <#if otherFieldName?has_content>
@@ -440,7 +452,7 @@ under the License.
     <input type="hidden" name="${name}_grp" value="${conditionGroup}" <@renderDisabled disabled />/>
   </#if>
   <#if opEquals?has_content>
-    <select <@renderDisabled disabled /> <#if name?has_content>name="${name}_op"</#if> class="selectBox"<#rt/>
+    <select <@renderDisabled disabled /> <#if name?has_content>name="${name}_op"</#if> class="selectBox"><#rt/>
       <option value="equals"<#if defaultOption=="equals"> selected="selected"</#if>>${opEquals}</option><#rt/>
       <option value="like"<#if defaultOption=="like"> selected="selected"</#if>>${opBeginsWith}</option><#rt/>
       <option value="contains"<#if defaultOption=="contains"> selected="selected"</#if>>${opContains}</option><#rt/>
