@@ -188,7 +188,7 @@ public final class ServiceDispatcher {
      * Registers the loader with this ServiceDispatcher
      * @param context the context of the local dispatcher
      */
-    public void register(DispatchContext context) {
+    public synchronized void register(DispatchContext context) {
         Debug.logInfo("Registering dispatcher: " + context.getName(), MODULE);
         this.localContext.put(context.getName(), context);
     }
@@ -196,7 +196,7 @@ public final class ServiceDispatcher {
      * De-Registers the loader with this ServiceDispatcher
      * @param local the LocalDispatcher to de-register
      */
-    public void deregister(LocalDispatcher local) {
+    public synchronized void deregister(LocalDispatcher local) {
         Debug.logInfo("De-Registering dispatcher: " + local.getName(), MODULE);
         localContext.remove(local.getName());
         if (localContext.isEmpty()) {
@@ -277,7 +277,7 @@ public final class ServiceDispatcher {
         Map<String, List<ServiceEcaRule>> eventMap = null;
         Map<String, Object> ecaContext = null;
         RunningService rs = null;
-        DispatchContext ctx = localContext.get(localName);
+        DispatchContext ctx = getLocalContext(localName);
         GenericEngine engine = null;
         Transaction parentTransaction = null;
         boolean isFailure = false;
@@ -405,7 +405,7 @@ public final class ServiceDispatcher {
                         try {
                             // FIXME without this line all simple test failed
                             context = ctx.makeValidContext(modelService.getName(), ModelService.IN_PARAM, context);
-                            modelService.validate(context, ModelService.IN_PARAM, locale);
+                            modelService.validate(getLocalDispatcher(localName), context, ModelService.IN_PARAM, locale);
                         } catch (ServiceValidationException e) {
                             Debug.logError(e, "Incoming context (in runSync : " + modelService.getName()
                                     + ") does not match expected requirements", MODULE);
@@ -520,7 +520,7 @@ public final class ServiceDispatcher {
                     }
                     try {
                         result = ctx.makeValidContext(modelService.getName(), ModelService.OUT_PARAM, result);
-                        modelService.validate(result, ModelService.OUT_PARAM, locale);
+                        modelService.validate(getLocalDispatcher(localName), result, ModelService.OUT_PARAM, locale);
                     } catch (ServiceValidationException e) {
                         rs.setEndStamp();
                         throw new GenericServiceException("Outgoing result (in runSync : " + modelService.getName()
@@ -696,7 +696,7 @@ public final class ServiceDispatcher {
         Locale locale = checkLocale(context);
 
         // setup the engine and context
-        DispatchContext ctx = localContext.get(localName);
+        DispatchContext ctx = this.getLocalContext(localName);
         GenericEngine engine = this.getGenericEngine(service.getEngineName());
 
         // for isolated transactions
@@ -755,7 +755,7 @@ public final class ServiceDispatcher {
                 // validate the context
                 if (service.isValidate() && !isError && !isFailure) {
                     try {
-                        service.validate(context, ModelService.IN_PARAM, locale);
+                        service.validate(getLocalDispatcher(localName), context, ModelService.IN_PARAM, locale);
                     } catch (ServiceValidationException e) {
                         Debug.logError(e, "Incoming service context (in runAsync: " + service.getName()
                                 + ") does not match expected requirements", MODULE);

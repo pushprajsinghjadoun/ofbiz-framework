@@ -62,8 +62,18 @@ body {
     background: @grey-lighter;
 }
 
-ul, li {
+ul li {
     list-style-type: none
+}
+
+/* restore list styles for Trumbowyg text editor */
+.trumbowyg-editor.trumbowyg-reset-css {
+    ul li {
+        list-style-type: disc;
+    }
+    ol li {
+        list-style-type: decimal;
+    }
 }
 
 br.clear, .clear {
@@ -1479,7 +1489,8 @@ i.hoverTooltip {
             }
         }
 
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], input[type="number"],
+        input[type="email"], input[type="url"], input[type="tel"] {
             border: none;
             background-color: @grey-light;
             padding: 1rem;
@@ -1606,7 +1617,8 @@ i.hoverTooltip {
             }
         }
 
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], input[type="number"],
+        input[type="email"], input[type="url"], input[type="tel"] {
             border: none;
             background-color: @grey-light;
             padding: 1rem;

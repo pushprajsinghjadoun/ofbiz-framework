@@ -76,6 +76,7 @@ import org.apache.ofbiz.product.product.ProductWorker;
 import org.apache.ofbiz.product.store.ProductStoreWorker;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
+import org.apache.ofbiz.service.ServiceContainer;
 import org.apache.ofbiz.service.ServiceUtil;
 
 /**
@@ -139,7 +140,7 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     private long nextGroupNumber = 1;
     private List<CartPaymentInfo> paymentInfo = new LinkedList<>();
     private List<CartShipInfo> shipInfo = new LinkedList<>();
-    private Map<String, String> contactMechIdsMap = new HashMap<>();
+    private Map<String, Set<String>> contactMechIdsMap = new HashMap<>();
     private Map<String, String> orderAttributes = new HashMap<>();
     private Map<String, Object> attributes = new HashMap<>(); // user defined attributes
     // Lists of internal/public notes: when the order is stored they are transformed into OrderHeaderNotes
@@ -166,6 +167,7 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     private Timestamp cartCreatedTs = UtilDateTime.nowTimestamp();
 
     private transient Delegator delegator = null;
+    private LocalDispatcher dispatcher = null;
     private String delegatorName = null;
 
     private String productStoreId = null;
@@ -205,6 +207,7 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     /** Creates a new cloned ShoppingCart Object. */
     public ShoppingCart(ShoppingCart cart) {
         this.delegator = cart.getDelegator();
+        this.dispatcher = cart.getDispatcher();
         this.delegatorName = delegator.getDelegatorName();
         this.productStoreId = cart.getProductStoreId();
         this.doPromotions = cart.getDoPromotions();
@@ -264,10 +267,11 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     }
 
     /** Creates new empty ShoppingCart object. */
-    public ShoppingCart(Delegator delegator, String productStoreId, String webSiteId, Locale locale, String currencyUom,
+    public ShoppingCart(LocalDispatcher dispatcher, String productStoreId, String webSiteId, Locale locale, String currencyUom,
                         String billToCustomerPartyId, String billFromVendorPartyId) {
 
-        this.delegator = delegator;
+        this.dispatcher = dispatcher;
+        this.delegator = dispatcher.getDelegator();
         this.delegatorName = delegator.getDelegatorName();
         this.productStoreId = productStoreId;
         this.webSiteId = webSiteId;
@@ -298,6 +302,11 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
         }
 
     }
+    public ShoppingCart(Delegator delegator, String productStoreId, String webSiteId, Locale locale, String currencyUom,
+                        String billToCustomerPartyId, String billFromVendorPartyId) {
+        this(getDispatcher(delegator), productStoreId, webSiteId, locale, currencyUom,
+                billToCustomerPartyId, billFromVendorPartyId);
+    }
 
 
     /** Creates new empty ShoppingCart object. */
@@ -316,6 +325,19 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
             delegator = DelegatorFactory.getDelegator(delegatorName);
         }
         return delegator;
+    }
+
+    /** get dispatcher */
+    public LocalDispatcher getDispatcher() {
+        return dispatcher != null
+                ? dispatcher
+                : getDispatcher(this.delegator);
+    }
+    public static LocalDispatcher getDispatcher(Delegator delegator) {
+        return ServiceContainer.getLocalDispatcher("ShoppingCart",
+                    delegator != null
+                            ? delegator
+                            : DelegatorFactory.getDelegator("default"));
     }
 
     /** get product store */
@@ -917,16 +939,6 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
             }
         }
         return productList;
-    }
-
-    /** Ensure item total quantity */
-    public void ensureItemsQuantity(List<ShoppingCartItem> cartItems, LocalDispatcher dispatcher, BigDecimal quantity)
-            throws CartItemModifyException {
-        for (ShoppingCartItem item : cartItems) {
-            if (item.getQuantity() != quantity) {
-                item.setQuantity(quantity, dispatcher, this);
-            }
-        }
     }
 
     /** Ensure item total quantity */
@@ -3465,28 +3477,41 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     }
 
     /** Add a contact mech to this purpose; the contactMechPurposeTypeId is required */
-    public void addContactMech(String contactMechPurposeTypeId, String contactMechId) {
+    public void addContactMechId(String contactMechPurposeTypeId, String contactMechId) {
         if (contactMechPurposeTypeId == null) {
             throw new IllegalArgumentException("You must specify a contactMechPurposeTypeId to add a ContactMech");
         }
-        contactMechIdsMap.put(contactMechPurposeTypeId, contactMechId);
+        UtilMisc.addToSetInMap(contactMechId, contactMechIdsMap, contactMechPurposeTypeId);
     }
 
     /** Get the contactMechId for this cart given the contactMechPurposeTypeId */
-    public String getContactMech(String contactMechPurposeTypeId) {
-        return contactMechIdsMap.get(contactMechPurposeTypeId);
+    public String getContactMechId(String contactMechPurposeTypeId) {
+        return UtilValidate.isNotEmpty(getContactMechIds(contactMechPurposeTypeId))
+                ? getContactMechIds(contactMechPurposeTypeId).get(0)
+                : null;
     }
 
-    /** Remove the contactMechId from this cart given the contactMechPurposeTypeId */
-    public String removeContactMech(String contactMechPurposeTypeId) {
-        return contactMechIdsMap.remove(contactMechPurposeTypeId);
+    /** Get the contactMechIds list for this cart given the contactMechPurposeTypeId */
+    public List<String> getContactMechIds(String contactMechPurposeTypeId) {
+        Set<String> contactMechIds = contactMechIdsMap.get(contactMechPurposeTypeId);
+        return contactMechIds != null
+                ? new ArrayList<>(contactMechIds)
+                : List.of();
+    }
+
+    /** Remove the contactMechIds list from this cart given the contactMechPurposeTypeId */
+    public List<String> removeContactMechId(String contactMechPurposeTypeId) {
+        Set<String> contactMechIds = contactMechIdsMap.remove(contactMechPurposeTypeId);
+        return contactMechIds != null
+                ? new ArrayList<>(contactMechIds)
+                : List.of();
     }
 
     /**
      * Gets order contact mech ids.
      * @return the order contact mech ids
      */
-    public Map<String, String> getOrderContactMechIds() {
+    public Map<String, Set<String>> getOrderContactMechIds() {
         return this.contactMechIdsMap;
     }
 
@@ -4616,17 +4641,15 @@ public class ShoppingCart implements Iterable<ShoppingCartItem>, Serializable {
     public List<GenericValue> makeAllOrderContactMechs() {
         List<GenericValue> allOrderContactMechs = new LinkedList<>();
 
-        Map<String, String> contactMechIds = this.getOrderContactMechIds();
-
+        Map<String, Set<String>> contactMechIds = this.getOrderContactMechIds();
         if (contactMechIds != null) {
-            for (Map.Entry<String, String> entry : contactMechIds.entrySet()) {
-                GenericValue orderContactMech = getDelegator().makeValue("OrderContactMech");
-                orderContactMech.set("contactMechPurposeTypeId", entry.getKey());
-                orderContactMech.set("contactMechId", entry.getValue());
-                allOrderContactMechs.add(orderContactMech);
+            for (Map.Entry<String, Set<String>> entry : contactMechIds.entrySet()) {
+                entry.getValue().forEach(contactMechId ->
+                        allOrderContactMechs.add(getDelegator().makeValue("OrderContactMech",
+                                Map.of("contactMechPurposeTypeId", entry.getKey(),
+                                        "contactMechId", contactMechId))));
             }
         }
-
         return allOrderContactMechs;
     }
 

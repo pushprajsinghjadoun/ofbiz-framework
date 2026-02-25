@@ -34,9 +34,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import org.apache.ofbiz.base.util.UtilCodec.SimpleEncoder;
 import org.apache.ofbiz.base.util.UtilHttp;
@@ -252,6 +252,21 @@ public class MacroFormRendererTest {
 
         macroFormRenderer.renderDateTimeField(appendable, ImmutableMap.of(), dateTimeField);
 
+        genericSingleMacroRenderedVerification();
+        genericTooltipRenderedVerification();
+    }
+
+    @Test
+    public void dateRangePickerFieldMacroRendered(@Mocked ModelFormField.DateRangePickerField dateRangePickerField) throws IOException {
+        new Expectations() {
+            {
+                renderableFtlFormElementsBuilder.dateRangePicker(withNotNull(), dateRangePickerField);
+                result = genericMacroCall;
+            }
+        };
+
+        genericTooltipRenderedExpectation(dateRangePickerField);
+        macroFormRenderer.renderDateRangePickerField(appendable, ImmutableMap.of(), dateRangePickerField);
         genericSingleMacroRenderedVerification();
         genericTooltipRenderedVerification();
     }

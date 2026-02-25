@@ -185,10 +185,6 @@ under the License.
         <required-permissions join-type="AND"><check-permission permission="PERIOD_MAINT"/></required-permissions>
         <auto-attributes mode="IN" include="pk" optional="false"/>
     </service>
-    <service name="createFuturePeriod" engine="groovy"
-            location="component://common/src/main/groovy/org/apache/ofbiz/common/CommonServicesScript.groovy" invoke="createFuturePeriod" auth="true">
-        <description>Create a future CustomTimePeriod</description>
-    </service>
 
     <!-- Status services -->
     <service name="getStatusItems" engine="java"
@@ -216,6 +212,14 @@ under the License.
         <attribute name="filterByDateValue" type="Timestamp" mode="IN" optional="true"/>
         <attribute name="fromDateName" type="String" mode="IN" optional="true"/>
         <attribute name="thruDateName" type="String" mode="IN" optional="true"/>
+        <attribute name="groupConditionOperator" type="String" mode="IN" optional="true">
+            <description>
+                Defines how the group condition will be applied, default is AND_OR:
+                    (group1_v1 AND group1_v2) OR (group2_v1 AND group2_v2) AND no_group
+                Alternative is OR_AND:
+                    (group1_v1 OR group1_v2) AND (group2_v1 OR group2_v2) AND no_group
+            </description>
+        </attribute>
         <attribute name="queryString" type="String" mode="OUT" optional="true"/>
         <attribute name="queryStringMap" type="java.util.Map" mode="OUT" optional="true"/>
         <attribute name="orderByList" type="java.util.List" mode="OUT" optional="true"/>
@@ -251,6 +255,14 @@ under the License.
         <attribute name="thruDateName" type="String" mode="IN" optional="true"/>
         <attribute name="viewIndex" type="Integer" mode="IN" optional="true"/>
         <attribute name="viewSize" type="Integer" mode="IN" optional="true"/>
+        <attribute name="groupConditionOperator" type="String" mode="IN" optional="true">
+            <description>
+                Defines how the group condition will be applied, default is AND_OR:
+                (group1_v1 AND group1_v2) OR (group2_v1 AND group2_v2) AND no_group
+                Alternative is OR_AND:
+                (group1_v1 OR group1_v2) AND (group2_v1 OR group2_v2) AND no_group
+            </description>
+        </attribute>
         <attribute name="listIt" type="org.apache.ofbiz.entity.util.EntityListIterator" mode="OUT" optional="true"/>
         <attribute name="listSize" type="Integer" mode="OUT" optional="true"/>
         <attribute name="queryString" type="String" mode="OUT" optional="true"/>
@@ -392,7 +404,7 @@ under the License.
     <service name="userLogin" engine="java" location="org.apache.ofbiz.common.login.LoginServices" invoke="userLogin">
         <description>Used to Automatically Authenticate a username/password; create a UserLogin object</description>
         <implements service="authenticationInterface"/>
-        <attribute name="request" mode="IN" type="javax.servlet.http.HttpServletRequest" optional="true"/>
+        <attribute name="request" mode="IN" type="jakarta.servlet.http.HttpServletRequest" optional="true"/>
     </service>
     <service name="userImpersonate" engine="java" location="org.apache.ofbiz.common.login.LoginServices" invoke="userImpersonate" auth="true">
         <description>Used to Automatically Authenticate a username/password; create a UserLogin object</description>

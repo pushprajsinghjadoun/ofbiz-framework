@@ -26,6 +26,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -38,11 +39,11 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import javax.servlet.ServletContext;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.ws.rs.core.MultivaluedHashMap;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.ws.rs.core.MultivaluedHashMap;
 
 import org.apache.cxf.jaxrs.model.URITemplate;
 import org.apache.ofbiz.base.location.FlexibleLocation;
@@ -63,8 +64,8 @@ import org.apache.ofbiz.entity.GenericValue;
 import org.apache.ofbiz.entity.util.EntityQuery;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
 import org.apache.ofbiz.security.CsrfUtil;
-import org.apache.ofbiz.webapp.OfbizUrlBuilder;
 import org.apache.ofbiz.webapp.OfbizPathShortener;
+import org.apache.ofbiz.webapp.OfbizUrlBuilder;
 import org.apache.ofbiz.webapp.control.ConfigXMLReader.ControllerConfig;
 import org.apache.ofbiz.webapp.control.ConfigXMLReader.RequestMap;
 import org.apache.ofbiz.webapp.event.EventFactory;
@@ -89,7 +90,7 @@ public final class RequestHandler {
     private final URL controllerConfigURL;
     private final boolean trackServerHit;
     private final boolean trackVisit;
-    private final List<String> hostHeadersAllowed;
+    private static final List<String> HOSTHEADERSALLOWED = UtilMisc.getHostHeadersAllowed();
     private ControllerConfig ccfg;
 
     private RequestHandler(ServletContext context) {
@@ -106,8 +107,6 @@ public final class RequestHandler {
 
         this.trackServerHit = !"false".equalsIgnoreCase(context.getInitParameter("track-serverhit"));
         this.trackVisit = !"false".equalsIgnoreCase(context.getInitParameter("track-visit"));
-        hostHeadersAllowed = UtilMisc.getHostHeadersAllowed();
-
     }
 
     public static RequestHandler getRequestHandler(ServletContext servletContext) {
@@ -318,7 +317,7 @@ public final class RequestHandler {
      * @return true if the request contains some valid certificates, otherwise false.
      */
     static boolean checkCertificates(HttpServletRequest request, Predicate<X509Certificate[]> validator) {
-        return Stream.of("javax.servlet.request.X509Certificate", // 2.2 spec
+        return Stream.of("jakarta.servlet.request.X509Certificate", // 2.2 spec
                 "javax.net.ssl.peer_certificates")       // 2.1 spec
                 .map(request::getAttribute)
                 .filter(Objects::nonNull)
@@ -360,7 +359,7 @@ public final class RequestHandler {
     public void doRequest(HttpServletRequest request, HttpServletResponse response, String chain,
                           GenericValue userLogin, Delegator delegator) throws RequestHandlerException, RequestHandlerExceptionAllowExternalRequests {
 
-        if (!hostHeadersAllowed.contains(request.getServerName())) {
+        if (!HOSTHEADERSALLOWED.contains(request.getServerName())) {
             Debug.logError("Domain " + request.getServerName() + " not accepted to prevent host header injection."
                     + " You need to set host-headers-allowed property in security.properties file.", MODULE);
             throw new RequestHandlerException("Domain " + request.getServerName() + " not accepted to prevent host header injection."
@@ -633,13 +632,7 @@ public final class RequestHandler {
             }
         } else if (requestUri != null) {
             String[] loginUris = EntityUtilProperties.getPropertyValue("security", "login.uris", delegator).split(",");
-            boolean removePreviousRequest = true;
-            for (int i = 0; i < loginUris.length; i++) {
-                if (requestUri.equals(loginUris[i])) {
-                    removePreviousRequest = false;
-                }
-            }
-            if (removePreviousRequest) {
+            if (Arrays.asList(loginUris).contains(requestUri)) {
                 // Remove previous request attribute on navigation to non-authenticated request
                 request.getSession().removeAttribute("_PREVIOUS_REQUEST_");
             }
@@ -1044,7 +1037,7 @@ public final class RequestHandler {
      * @param requestResponse
      */
     private void setUserMessageResponseToRequest(HttpServletRequest request, ConfigXMLReader.RequestResponse requestResponse) {
-        final String fieldMessageName = requestResponse.getName() == "error"
+        final String fieldMessageName = "error".equals(requestResponse.getName())
                 ? "_ERROR_MESSAGE_"
                 : "_EVENT_MESSAGE_";
         final String customMessageField = "_CUSTOM" + fieldMessageName;

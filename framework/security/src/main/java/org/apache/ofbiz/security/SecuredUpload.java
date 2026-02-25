@@ -23,6 +23,7 @@ import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.Transparency;
 import java.awt.image.BufferedImage;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -39,13 +40,18 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -78,7 +84,10 @@ import org.apache.ofbiz.base.util.UtilValidate;
 import org.apache.ofbiz.base.util.UtilXml;
 import org.apache.ofbiz.entity.Delegator;
 import org.apache.ofbiz.entity.util.EntityUtilProperties;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.RandomAccessReadBufferedFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
+//import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.PDEmbeddedFilesNameTreeNode;
 import org.apache.tika.Tika;
@@ -96,6 +105,10 @@ import org.mustangproject.ZUGFeRD.ZUGFeRDImporter;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.imaging.ImageProcessingException;
+import com.drew.metadata.Directory;
+import com.drew.metadata.Tag;
 import com.lowagie.text.pdf.PdfReader;
 
 public class SecuredUpload {
@@ -111,7 +124,7 @@ public class SecuredUpload {
     private static final String MODULE = SecuredUpload.class.getName();
     private static final List<String> DENIEDFILEEXTENSIONS = getDeniedFileExtensions();
     private static final List<String> DENIEDWEBSHELLTOKENS = getDeniedWebShellTokens();
-    private static final Integer MAXLINELENGTH = UtilProperties.getPropertyAsInteger("security", "maxLineLength", 10000);
+    private static final Integer MAXLINELENGTH = UtilProperties.getPropertyAsInteger("security", "maxLineLength", 0);
     private static final Boolean ALLOWSTRINGCONCATENATIONINUPLOADEDFILES =
             UtilProperties.getPropertyAsBoolean("security", "allowStringConcatenationInUploadedFiles", false);
 
@@ -238,13 +251,24 @@ public class SecuredUpload {
 
     /**
      * @param fileToCheck
+     * @param delegator
+     * @return true if the file is valid
+     * @throws IOException
+     * @throws ImageReadException
+     */
+    public static boolean isValidAllFile(String fileToCheck, Delegator delegator) throws IOException, ImageReadException {
+        return isValidFile(fileToCheck, "All", delegator);
+    }
+
+    /**
+     * @param fileToCheck
      * @param fileType
      * @return true if the file is valid
      * @throws IOException
      * @throws ImageReadException
      */
     public static boolean isValidFile(String fileToCheck, String fileType, Delegator delegator) throws IOException, ImageReadException {
-        // Allow all
+        // Allow all uploads w/o check
         if (("true".equalsIgnoreCase(EntityUtilProperties.getPropertyValue("security", "allowAllUploads", delegator)))) {
             return true;
         }
@@ -387,8 +411,16 @@ public class SecuredUpload {
      */
     private static boolean imageMadeSafe(String fileName) {
         File file = new File(fileName);
-        boolean safeState = false;
         boolean fallbackOnApacheCommonsImaging;
+
+        if (!noWebshellInMetadata(file)) {
+            return false;
+        }
+        if (!noWebshellInPNG(file)) {
+            return false;
+        }
+
+        boolean safeState = false;
 
         if ((file != null) && file.exists() && file.canRead() && file.canWrite()) {
             try (OutputStream fos = Files.newOutputStream(file.toPath(), StandardOpenOption.WRITE)) {
@@ -475,6 +507,117 @@ public class SecuredUpload {
         return safeState;
     }
 
+    private static boolean noWebshellInMetadata(File file) {
+        com.drew.metadata.Metadata metadata = null;
+        try {
+            metadata = ImageMetadataReader.readMetadata(file);
+        } catch (ImageProcessingException | IOException error) {
+            Debug.logError("================== Not saved for security reason ==================" + error, MODULE);
+        }
+
+        for (Directory directory : metadata.getDirectories()) {
+            for (Tag tag : directory.getTags()) {
+                try {
+                    if (!isValidText(tag.toString(), Collections.emptyList())) {
+                        Debug.logError("================== Not saved for security reason ==================", MODULE);
+                        return false;
+                    }
+                } catch (IOException error) {
+                    Debug.logError("================== Not saved for security reason ==================" + error, MODULE);
+                    return false;
+                }
+            }
+            for (String error : directory.getErrors()) {
+                Debug.logError("================== Not saved for security reason ==================" + error, MODULE);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean noWebshellInPNG(File file) {
+        try {
+            ImageIO.read(file);
+            if (!isPNG(file)) {
+                return true; // Not a PNG file, it's OK so far
+            }
+        } catch (IOException error) {
+            Debug.logError("================== Not saved for security reason ==================" + error, MODULE);
+            return false;
+        }
+
+        try (DataInputStream stream = new DataInputStream(new FileInputStream(file));) {
+            byte[] data = new byte[8];
+            stream.readFully(data); //Read PNG Header
+            while (true) {
+                data = new byte[4];
+                stream.readFully(data); //Read Length
+                int length = ((data[0] & 0xFF) << 24)
+                        | ((data[1] & 0xFF) << 16)
+                        | ((data[2] & 0xFF) << 8)
+                        | (data[3] & 0xFF); //Byte array to int
+                stream.readFully(data); //Read Name
+                String name = new String(data); //Byte array to String
+                if (name.equals("IDAT")) {
+                    data = new byte[length];
+                    stream.readFully(data); //Read Data
+                    return inflate(data);
+                } else { //Don't care about other chunks
+                    data = new byte[length + 4]; //Data length + 4 byte CRC
+                    stream.readFully(data); //Skip Data and CRC.
+                }
+            }
+        } catch (IOException error) {
+            Debug.logError("================== Not saved for security reason, wrong PNG IDAT (weird) ==================" + error, MODULE);
+            return false;
+        }
+    }
+
+    private static boolean isPNG(File file) throws IOException {
+        Path filePath = Paths.get(file.getPath());
+        byte[] bytesFromFile = Files.readAllBytes(filePath);
+        ImageFormat imageFormat = Imaging.guessFormat(bytesFromFile);
+        return (imageFormat.equals(ImageFormats.PNG));
+    }
+
+    private static boolean inflate(byte[] data) {
+        Inflater inflater = new Inflater();
+        inflater.setInput(data);
+        byte[] result = new byte[data.length * 5]; // Inflating ratio max is 5/1
+        try {
+            while (!inflater.finished()) {
+                int count = inflater.inflate(result);
+                if (count == 0) {
+                    if (!inflater.needsInput()) { // Not everything read
+                        inflater.inflate(result);
+                    } else if (inflater.needsDictionary()) { // Dictionary to be loaded
+                        inflater.setDictionary(result);
+                        inflater.getAdler();
+                    } else { // nothing to inflate, avoid endless loop
+                        inflater.end();
+                        return true;
+                    }
+                }
+            }
+            if (inflater.getRemaining() > 0) { // There is more than image data in IDAT, check it
+                byte[] remaining = Arrays.copyOfRange(data, (int) inflater.getBytesRead(), (int) inflater.getBytesRead() + inflater.getRemaining());
+                String toCheck = new String(remaining, "UTF-8");
+                byte[] decoded = Base64.getDecoder().decode(toCheck);
+                String decodedStr = new String(decoded, StandardCharsets.UTF_8);
+                if (!isValidText(decodedStr, Collections.emptyList())) {
+                    Debug.logError("================== Not saved for security reason ==================", MODULE);
+                    inflater.end();
+                    return false;
+                }
+            }
+        } catch (DataFormatException | IOException error) {
+            Debug.logError("================== Not saved for security reason ==================" + error, MODULE);
+            inflater.end();
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Is it a supported image format, including SVG?
      * @param fileName
@@ -550,7 +693,8 @@ public class SecuredUpload {
             }
             // OK no JS code, pass to check 2: detect if the document has any embedded files
             PDEmbeddedFilesNameTreeNode efTree = null;
-            try (PDDocument pdDocument = PDDocument.load(file)) {
+            try (PDDocument pdDocument = Loader.loadPDF(new RandomAccessReadBufferedFile(fileName))) {
+                    //PDDocument.load(file)) {
                 PDDocumentNameDictionary names = new PDDocumentNameDictionary(pdDocument.getDocumentCatalog());
                 efTree = names.getEmbeddedFiles();
             }
@@ -589,8 +733,6 @@ public class SecuredUpload {
                     + "For security reason it's not accepted as a such file",
                     MODULE);
         }
-        file = new File(fileName);
-        file.delete();
         return safeState;
     }
 
@@ -624,8 +766,12 @@ public class SecuredUpload {
         }
 
         // cf. https://commons.apache.org/proper/commons-csv/apidocs/org/apache/commons/csv/CSVFormat.html
-        try (CSVParser parser = new CSVParser(in, cvsFormat)) {
-            parser.getRecords();
+        if (!content.contains("</svg>")) {
+            try (CSVParser parser = new CSVParser(in, cvsFormat)) {
+                parser.getRecords();
+            }
+        } else {
+            Debug.logInfo("The file " + fileName + " is not a valid CSV file. For security reason it's not accepted as a such file", MODULE);
         }
         return isValidTextFile(fileName, false); // Validate content to prevent webshell
     }
@@ -827,8 +973,8 @@ public class SecuredUpload {
     /**
      * Does this text file contains a Freemarker Server-Side Template Injection (SSTI) using freemarker.template.utility.Execute? Etc.
      * @param fileName must be an UTF-8 encoded text file
-     * @param encodedContent TODO
-     * @return true if the text file does not contains a Freemarker SSTI
+     * @param encodedContent true id the file content is encoded
+     * @return true if the text file does not contains a Freemarker SSTI or other issues
      * @throws IOException
      */
     private static boolean isValidTextFile(String fileName, Boolean encodedContent) throws IOException {
@@ -897,13 +1043,10 @@ public class SecuredUpload {
         return UtilValidate.isNotEmpty(deniedTokens) ? StringUtil.split(deniedTokens, ",") : new ArrayList<>();
     }
 
-    public static List<String> getallowedTokens() {
-        String allowedTokens = UtilProperties.getPropertyValue("security", "allowedTokens");
-        return UtilValidate.isNotEmpty(allowedTokens) ? StringUtil.split(allowedTokens, ",") : new ArrayList<>();
-    }
-
-
     private static boolean checkMaxLinesLength(String fileToCheck) {
+        if (MAXLINELENGTH == 0) {
+            return true;
+        }
         try {
             File file = new File(fileToCheck);
             List<String> lines = FileUtils.readLines(file, Charset.defaultCharset());
