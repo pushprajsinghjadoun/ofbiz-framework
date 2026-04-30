@@ -61,6 +61,7 @@ import java.util.zip.Inflater;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -940,7 +941,7 @@ public class SecuredUpload {
 
         // cf. https://commons.apache.org/proper/commons-csv/apidocs/org/apache/commons/csv/CSVFormat.html
         if (!content.contains("</svg>")) {
-            try (CSVParser parser = new CSVParser(in, cvsFormat)) {
+            try (CSVParser parser = cvsFormat.parse(in)) {
                 parser.getRecords();
             }
         } else {
@@ -1332,9 +1333,12 @@ public class SecuredUpload {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             // Harden against XXE and DOCTYPE-based injection attacks
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
             dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            dbf.setXIncludeAware(false);
             dbf.setExpandEntityReferences(false);
             dbf.setNamespaceAware(true);
             DocumentBuilder db = dbf.newDocumentBuilder();
