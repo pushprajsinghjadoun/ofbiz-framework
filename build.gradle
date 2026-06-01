@@ -127,6 +127,7 @@ application {
 
 distributions.main.contents.from(rootDir) {
     include 'framework/**', 'applications/**', 'themes/**', 'plugins/**'
+    exclude '**/.gradle/**'
 }
 
 javadoc {
