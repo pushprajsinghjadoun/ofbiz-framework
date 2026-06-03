@@ -29,7 +29,7 @@ under the License.
 <center>
   <div class="screenlet login-screenlet">
     <div class="screenlet-title-bar" style="background-color: #ff9900; text-align: center; padding: 10px;">
-      <h3 style="color: white; font-weight: bold; margin-bottom: 5px;">OFBiz Deployed via Jenkins CI! 🚀</h3>
+      <h3 style="color: white; font-weight: bold; margin-bottom: 5px;">OFBiz Deployed via Jenkins CI! 1.0 🚀</h3>
       <h4 style="color: white; margin: 0;">${uiLabelMap.CommonRegistered}</h4>
     </div>
     <div class="screenlet-body">
