@@ -29,8 +29,9 @@ under the License.
 <div id="loginBar"><span>${uiLabelMap.CommonBeLogged}</span><div id="company-logo"></div></div>
 <center>
   <div class="screenlet login-screenlet">
-    <div class="screenlet-title-bar">
-      <h3>${uiLabelMap.CommonRegistered}</h3>
+    <div class="screenlet-title-bar" style="background-color: #ff9900; text-align: center; padding: 10px;">
+      <h3 style="color: white; font-weight: bold; margin-bottom: 5px;">OFBiz Deployed via Jenkins CI! 🚀</h3>
+      <h4 style="color: white; margin: 0;">${uiLabelMap.CommonRegistered}</h4>
     </div>
     <div class="screenlet-body">
       <form method="post" action="<@ofbizUrl>login</@ofbizUrl>" name="loginform">
