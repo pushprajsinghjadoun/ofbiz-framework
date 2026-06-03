@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# (Syntax directive temporarily removed due to Docker Hub 429 limit)
 #####################################################################
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
