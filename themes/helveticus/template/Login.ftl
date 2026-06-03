@@ -31,6 +31,9 @@ under the License.
   </div>
 
   <div class="screenlet login-screenlet">
+    <div style="background-color: #ff9900; color: white; text-align: center; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+      <h3 style="color: white; margin: 0; font-weight: bold;">OFBiz Deployed via Jenkins CI! 🚀</h3>
+    </div>
     <h3>${uiLabelMap.CommonBeLogged}</h3>
     <div class="screenlet-body">
       <form method="post" action="<@ofbizUrl>login</@ofbizUrl>" name="loginform">
